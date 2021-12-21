@@ -1,6 +1,5 @@
 package com.yhsh.mediarecorder;
 
-import android.app.Activity;
 import android.content.Context;
 import android.media.AudioAttributes;
 import android.media.AudioFormat;
