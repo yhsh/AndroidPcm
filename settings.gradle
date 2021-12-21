@@ -1,0 +1,5 @@
+rootProject.name = "androidPlayPcm"
+include ':app'
+include ':library'
+include ':recorder'
+include ':recordpcm'
