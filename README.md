@@ -2,7 +2,9 @@
 
 #### 介绍
 Android录音录制PCM音频流，Android播放PCM音频流
+
 recordpcm这个module是pcm流的录制与播放
+其它module是非pcm流录音与播放的
 
 #### 软件架构
 软件架构说明
