@@ -9,7 +9,7 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 
 /**
- * @author Zheng Cong
+ * @author xiayiye5
  * @date 2021/12/17 16:37
  */
 public class RecordPcmUtils {

@@ -14,7 +14,7 @@ import java.io.File;
 import java.util.List;
 
 /**
- * @author Zheng Cong
+ * @author xiayiye5
  * @date 2021/12/17 10:11
  */
 public class VideoAdapter extends RecyclerView.Adapter<VideoAdapter.VideoHolder> {
