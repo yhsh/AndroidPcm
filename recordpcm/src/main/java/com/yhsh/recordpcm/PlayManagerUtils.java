@@ -116,7 +116,7 @@ public class PlayManagerUtils {
             filePathList.clear();
         }
         filePathList.add(recordFile);
-        filePathList.add(new File("/storage/emulated/0/Android/data/com.yhsh.recordpcm/cache/audio_cache/xiayiye5.pcm"));
+//        filePathList.add(new File("/storage/emulated/0/Android/data/com.yhsh.recordpcm/cache/audio_cache/xiayiye5.pcm"));
         try {
             //输出流
             OutputStream os = new FileOutputStream(recordFile);
@@ -182,13 +182,11 @@ public class PlayManagerUtils {
     public void playPcm(boolean isChecked) {
         if (isChecked) {
             //两首一起播放
-            if (filePathList.size() >= 2) {
-                mExecutorService.execute(() -> playPcmData(filePathList.get(0)));
-                //播放第二次录音得伴奏
-//                mExecutorService.execute(() -> playPcmData(filePathList.get(1)));
-                //播放固定伴奏
-                mExecutorService.execute(this::playBanZou);
-            }
+            mExecutorService.execute(() -> playPcmData(filePathList.get(0)));
+            //播放第二次录音的伴奏
+//           mExecutorService.execute(() -> playPcmData(filePathList.get(1)));
+            //播放固定伴奏
+            mExecutorService.execute(this::playBanZou);
         } else {
             //只播放最后一次录音
             playPcmData(recordFile);
