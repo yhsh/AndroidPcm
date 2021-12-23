@@ -1,6 +1,7 @@
 package com.yhsh.recordpcm;
 
 import android.content.Context;
+import android.content.res.Resources;
 import android.media.AudioFormat;
 import android.media.AudioManager;
 import android.media.AudioRecord;
@@ -23,11 +24,17 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.ref.WeakReference;
+import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingDeque;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 /**
- * @author xiayiye5
+ * @author Zheng Cong
  * @date 2021/12/17 18:10
  */
 public class PlayManagerUtils {
@@ -35,10 +42,20 @@ public class PlayManagerUtils {
     private WeakReference<Context> weakReference;
     private File recordFile;
     private boolean isRecording;
+    /**
+     * 是否播放,默认播放
+     */
+    private boolean isPlay = true;
+    /**
+     * 最多只能存2条记录
+     */
+    private final List<File> filePathList = new ArrayList<>(2);
 
     /**
      * 16K采集率
+     * 44.1K采集率
      */
+//    int sampleRateInHz = 44100;
     int sampleRateInHz = 16000;
     /**
      * 格式
@@ -51,6 +68,7 @@ public class PlayManagerUtils {
      */
     int audioEncoding = AudioFormat.ENCODING_PCM_16BIT;
 
+
     private PlayManagerUtils() {
     }
 
@@ -61,6 +79,13 @@ public class PlayManagerUtils {
     }
 
     private final Handler handler = new Handler(Looper.getMainLooper());
+
+    ThreadPoolExecutor mExecutorService = new ThreadPoolExecutor(
+            3, 5,
+            1, TimeUnit.MINUTES,
+            new LinkedBlockingDeque<>(10),
+            Executors.defaultThreadFactory(),
+            new ThreadPoolExecutor.AbortPolicy());
 
     public void startRecord(WeakReference<Context> weakReference) {
         this.weakReference = weakReference;
@@ -87,6 +112,11 @@ public class PlayManagerUtils {
             Log.e(TAG, "未能创建");
             throw new IllegalStateException("未能创建" + recordFile.toString());
         }
+        if (filePathList.size() == 2) {
+            filePathList.clear();
+        }
+        filePathList.add(recordFile);
+        filePathList.add(new File("/storage/emulated/0/Android/data/com.yhsh.recordpcm/cache/audio_cache/xiayiye5.pcm"));
         try {
             //输出流
             OutputStream os = new FileOutputStream(recordFile);
@@ -98,6 +128,7 @@ public class PlayManagerUtils {
             short[] buffer = new short[bufferSize];
             audioRecord.startRecording();
             Log.e(TAG, "开始录音");
+            long startTime = System.currentTimeMillis();
             isRecording = true;
             while (isRecording) {
                 int bufferReadResult = audioRecord.read(buffer, 0, bufferSize);
@@ -107,6 +138,9 @@ public class PlayManagerUtils {
             }
             audioRecord.stop();
             dos.close();
+            long endTime = System.currentTimeMillis();
+            float recordTime = (endTime - startTime) / 1000f;
+            Log.e(TAG, "录音总时长：" + recordTime + "s");
         } catch (Throwable t) {
             Log.e(TAG, "录音失败");
             showToast("录音失败");
@@ -139,33 +173,95 @@ public class PlayManagerUtils {
             audioTrack.write(music, 0, musicLength);
             audioTrack.stop();
         } catch (Throwable t) {
-            Log.e(TAG, "播放失败");
+            Log.e(TAG, "播放失败" + t.getMessage());
             showToast("播放失败");
+        }
+    }
+
+
+    public void playPcm(boolean isChecked) {
+        if (isChecked) {
+            //两首一起播放
+            if (filePathList.size() >= 2) {
+                mExecutorService.execute(() -> playPcmData(filePathList.get(0)));
+                //播放第二次录音得伴奏
+//                mExecutorService.execute(() -> playPcmData(filePathList.get(1)));
+                //播放固定伴奏
+                mExecutorService.execute(this::playBanZou);
+            }
+        } else {
+            //只播放最后一次录音
+            playPcmData(recordFile);
         }
     }
 
     /**
      * 播放Pcm流,边读取边播
      */
-    public void playPcm() {
+    private void playPcmData(File recordFiles) {
+        Log.e(TAG, "线程名字" + Thread.currentThread().getName());
         try {
 //            recordFile = new File("/storage/emulated/0/Android/data/com.yhsh.recordpcm/cache/audio_cache/music.wav");
-            //从音频文件中读取声音
-            DataInputStream dis = new DataInputStream(new BufferedInputStream(new FileInputStream(recordFile)));
+            DataInputStream dis = new DataInputStream(new BufferedInputStream(new FileInputStream(recordFiles)));
             //最小缓存区
             int bufferSizeInBytes = AudioTrack.getMinBufferSize(sampleRateInHz, AudioFormat.CHANNEL_OUT_STEREO, audioEncoding);
-            //创建AudioTrack对象   依次传入 :流类型、采样率（与采集的要一致）、音频通道（采集是IN 播放时OUT）、量化位数、最小缓冲区、模式
             AudioTrack player = new AudioTrack(AudioManager.STREAM_MUSIC, sampleRateInHz, AudioFormat.CHANNEL_OUT_STEREO, audioEncoding, bufferSizeInBytes, AudioTrack.MODE_STREAM);
             short[] data = new short[bufferSizeInBytes];
-            //byte[] data = new byte[bufferSizeInBytes];
+            long startTime = System.currentTimeMillis();
             //开始播放
             player.play();
             while (true) {
                 int i = 0;
                 while (dis.available() > 0 && i < data.length) {
-                    //录音时write Byte 那么读取时就该为readByte要相互对应
+                    if (isPlay) {
+                        data[i] = dis.readShort();
+                        i++;
+                    } else {
+                        Log.e(TAG, "暂停播放：");
+                    }
+                }
+                player.write(data, 0, data.length);
+                //表示读取完了
+                if (i != bufferSizeInBytes) {
+                    player.stop();//停止播放
+                    player.release();//释放资源
+                    dis.close();
+                    long endTime = System.currentTimeMillis();
+                    float time = (endTime - startTime) / 1000f;
+                    Log.e(TAG, "播放原声完成总计：" + time + "s");
+                    showToast("播放原声完成总时长为：" + time + "s");
+                    break;
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "播放异常: " + e.getMessage());
+            showToast("播放异常！！！！");
+            e.printStackTrace();
+        }
+    }
+
+
+    /**
+     * 播放Pcm流,边读取边播
+     */
+    private void playBanZou() {
+        Log.e(TAG, "打印线程" + Thread.currentThread().getName());
+        try {
+//            recordFile = new File("/storage/emulated/0/Android/data/com.yhsh.recordpcm/cache/audio_cache/music.wav");
+            InputStream inputStream = weakReference.get().getResources().openRawResource(R.raw.xiayiye5);
+            DataInputStream dis = new DataInputStream(new BufferedInputStream(inputStream));
+//            DataInputStream dis = new DataInputStream(new BufferedInputStream(new FileInputStream(recordFiles)));
+            //最小缓存区
+            int bufferSizeInBytes = AudioTrack.getMinBufferSize(sampleRateInHz, AudioFormat.CHANNEL_OUT_STEREO, audioEncoding);
+            AudioTrack player = new AudioTrack(AudioManager.STREAM_MUSIC, sampleRateInHz, AudioFormat.CHANNEL_OUT_STEREO, audioEncoding, bufferSizeInBytes, AudioTrack.MODE_STREAM);
+            short[] data = new short[bufferSizeInBytes];
+            long startTime = System.currentTimeMillis();
+            //开始播放
+            player.play();
+            while (true) {
+                int i = 0;
+                while (dis.available() > 0 && i < data.length) {
                     data[i] = dis.readShort();
-                    //data[i] = dis.readByte();
                     i++;
                 }
                 player.write(data, 0, data.length);
@@ -174,7 +270,10 @@ public class PlayManagerUtils {
                     player.stop();//停止播放
                     player.release();//释放资源
                     dis.close();
-                    showToast("播放完成了！！！");
+                    long endTime = System.currentTimeMillis();
+                    float time = (endTime - startTime) / 1000f;
+                    Log.e(TAG, "播放伴奏完成总计：" + time + "s");
+                    showToast("播放伴奏完成总时长为：" + time + "s");
                     break;
                 }
             }
@@ -195,6 +294,15 @@ public class PlayManagerUtils {
 
     private void showToast(String msg) {
         handler.post(() -> Toast.makeText(weakReference.get(), msg, Toast.LENGTH_LONG).show());
+    }
+
+    /**
+     * 设置播放状态
+     *
+     * @param isPlay 是否播放原声
+     */
+    public void setPlayStatus(boolean isPlay) {
+        this.isPlay = isPlay;
     }
 }
 
